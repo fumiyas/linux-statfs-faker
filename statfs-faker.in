@@ -1,0 +1,98 @@
+#!/bin/sh
+
+prefix="@prefix@"
+exec_prefix="@exec_prefix@"
+libdir="@libdir@"
+
+statfs_faker_so="$libdir/statfs-faker.@SHARED_LIB_EXT@"
+
+## ======================================================================
+
+pdie() { echo "$0: ERROR: ${1-}" 1>&2; exit "${2-1}"; }
+
+getopts_want_arg()
+{
+  if [[ $# -lt 2 ]]; then
+    pdie "Option requires an argument: $1"
+  fi
+  if [[ -n ${3:+set} ]]; then
+    if [[ $2 =~ $3 ]]; then
+      : OK
+    else
+      pdie "Invalid value for option: $1: $2"
+    fi
+  fi
+  if [[ -n ${4:+set} ]]; then
+    if [[ $2 =~ $4 ]]; then
+      pdie "Invalid value for option: $1: $2"
+    fi
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  opt="$1"; shift
+
+  if [[ -z "${opt##-[!-]?*}" ]]; then
+    set -- "-${opt#??}" ${1+"$@"}
+    opt="${opt%${1#-}}"
+  fi
+  if [[ -z "${opt##--*=*}" ]]; then
+    set -- "${opt#--*=}" ${1+"$@"}
+    opt="${opt%%=*}"
+  fi
+
+  case "$opt" in
+  -t|--type)
+    getopts_want_arg "$opt" ${1+"$1"}
+    STATFS_FAKER_F_TYPE="$1"; shift
+    export STATFS_FAKER_F_TYPE
+    ;;
+  --)
+    break
+    ;;
+  -*)
+    pdie "Invalid option: $opt"
+    ;;
+  *)
+    set -- "$opt" ${1+"$@"}
+    break
+    ;;
+  esac
+done
+
+if [ $# -lt 1 ]; then
+  echo "Usage: $0 [OPTIONS] COMMAND [ARGUMENT ...]" 1>&2
+  echo
+  echo "Options:"
+  echo " -t, --type TYPE"
+  echo "    Specify the fake type value (f_type) of filesystem"
+  echo "    (See statfs(2) manual page for valid f_type values)"
+  exit 1
+fi
+
+case ":$@LD_PRELOAD@:" in
+*":$statfs_faker_so:"*)
+  ;;
+*)
+  @LD_PRELOAD@="${@LD_PRELOAD@:+$@LD_PRELOAD@:}$statfs_faker_so"
+  ;;
+esac
+
+if [ x"$1" = x"--sh-init" ]; then
+  echo "@LD_PRELOAD@='$@LD_PRELOAD@'"
+  echo "export @LD_PRELOAD@"
+  if [ -n "@DYLD_FORCE_FLAT_NAMESPACE@" ]; then
+    echo "@DYLD_FORCE_FLAT_NAMESPACE@=1"
+    echo "export @DYLD_FORCE_FLAT_NAMESPACE@"
+  fi
+  exit 0
+fi
+
+export @LD_PRELOAD@
+if [ -n "@DYLD_FORCE_FLAT_NAMESPACE@" ]; then
+  @DYLD_FORCE_FLAT_NAMESPACE@=1
+  export @DYLD_FORCE_FLAT_NAMESPACE@
+fi
+
+exec "$@"
+exit $?
